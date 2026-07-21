@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Geometrico — Sistema de Control Integral</title>
+<style>
+  :root {
+    --cream: #F2E6D5;
+    --cream-light: #F8F1E6;
+    --ink: #1A1815;
+    --burnt: #E05A00;
+    --line: rgba(26,24,21,0.14);
+    --line-strong: rgba(26,24,21,0.28);
+    --muted: rgba(26,24,21,0.58);
+    --good: #2F7D4F;
+    --bad: #C0392B;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    background: var(--cream); color: var(--ink); -webkit-font-smoothing: antialiased;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 2px solid var(--ink); background: var(--cream-light);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header .brand { display: flex; flex-direction: column; }
+  header .brand b { font-size: 18px; letter-spacing: 0.02em; }
+  header .brand span { font-size: 11px; color: var(--muted); font-style: italic; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; padding: 10px 20px; background: var(--cream-light); border-bottom: 1px solid var(--line); position: sticky; top: 61px; z-index: 9; }
+  nav button {
+    background: transparent; border: 1px solid transparent; border-radius: 7px;
+    padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--muted); cursor: pointer;
+  }
+  nav button.active { background: var(--ink); color: var(--cream-light); }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; padding-bottom: 80px; }
+  .card { background: var(--cream-light); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 12px; color: var(--muted); font-weight: 700; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 14px; }
+  .stat { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .stat .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+  .stat .value { font-size: 22px; font-weight: 700; }
+  .stat .value.bad { color: var(--bad); }
+  .stat .value.good { color: var(--good); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .row:last-child { margin-bottom: 0; }
+  .field { flex: 1; min-width: 140px; }
+  label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  input, select, textarea {
+    width: 100%; padding: 10px; border-radius: 7px; border: 1px solid var(--line-strong);
+    background: #fff; font-size: 14px; color: var(--ink); font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 50px; }
+  button.primary { background: var(--ink); color: var(--cream-light); border: none; border-radius: 7px; padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button.burnt { background: var(--burnt); color: #fff; border: none; border-radius: 7px; padding: 10px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button.ghost { background: transparent; border: 1px solid var(--line-strong); border-radius: 7px; padding: 7px 11px; font-size: 12px; cursor: pointer; color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 6px 6px; border-bottom: 1.5px solid var(--ink); }
+  td { padding: 9px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .num { text-align: right; white-space: nowrap; }
+  .pill { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .pill.por_fabricar { background: #eee; color: var(--muted); }
+  .pill.en_produccion { background: #FCE4C2; color: #8a5300; }
+  .pill.listo_despacho { background: #D6E9DA; color: var(--good); }
+  .pill.despachado { background: var(--ink); color: var(--cream-light); }
+  .pill.atrasado { background: var(--bad); color: #fff; }
+  .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; }
+  .kanban { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .kanban-col { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-height: 120px; }
+  .kanban-col h3 { font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 4px 0 10px; }
+  .kanban-card { background: var(--cream-light); border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 12.5px; }
+  .kanban-card b { display: block; font-size: 13px; margin-bottom: 4px; }
+  .kanban-card .muted { color: var(--muted); font-size: 11.5px; }
+  .kanban-card .actions { margin-top: 8px; display: flex; gap: 6px; }
+  .tier-group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tier-btn { flex: 1; min-width: 100px; padding: 10px 8px; border-radius: 8px; border: 1.5px solid var(--line-strong); background: #fff; font-size: 12.5px; font-weight: 600; text-align: center; cursor: pointer; }
+  .tier-btn.active { background: var(--burnt); border-color: var(--burnt); color: #fff; }
+  .totals { margin-top: 14px; text-align: right; }
+  .totals .sub { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .totals .grand { font-size: 22px; font-weight: 700; }
+  @media (max-width: 720px) { .kanban { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><b>Geometrico</b><span>somos la forma — sistema de control integral</span></div>
+  <div class="muted" style="font-size:12px;" id="clock"></div>
+</header>
+
+<nav id="nav"></nav>
+<main id="main"></main>
+
+<script>
+const TABS = [
+  { id: 'resumen', label: 'Resumen' },
+  { id: 'cotizador', label: 'Cotizador · Pedidos' },
+  { id: 'produccion', label: 'Producción' },
+  { id: 'cronograma', label: 'Cronograma' },
+  { id: 'inventario', label: 'Inventario' },
+  { id: 'financiero', label: 'Financiero' },
+];
+let currentTab = 'resumen';
+
+function fmt(n) { return 'COP ' + Math.round(n || 0).toLocaleString('es-CO'); }
+function todayStr() { return new Date().toISOString().slice(0,10); }
+
+async function api(path, opts) {
+  const res = await fetch('/api' + path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || ('Error ' + res.status));
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function renderNav() {
+  const nav = document.getElementById('nav');
+  nav.innerHTML = '';
+  TABS.forEach(t => {
+    const btn = document.createElement('button');
+    btn.textContent = t.label;
+    if (t.id === currentTab) btn.classList.add('active');
+    btn.onclick = () => { currentTab = t.id; renderNav(); renderMain(); };
+    nav.appendChild(btn);
+  });
+}
+
+function setClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
+}
+setInterval(setClock, 30000); setClock();
+
+async function renderMain() {
+  const main = document.getElementById('main');
+  main.innerHTML = '<div class="empty">Cargando…</div>';
+  try {
+    if (currentTab === 'resumen') return renderResumen(main);
+    if (currentTab === 'cotizador') return renderCotizador(main);
+    if (currentTab === 'produccion') return renderProduccion(main);
+    if (currentTab === 'cronograma') return renderCronograma(main);
+    if (currentTab === 'inventario') return renderInventario(main);
+    if (currentTab === 'financiero') return renderFinanciero(main);
+  } catch (err) {
+    main.innerHTML = `<div class="card"><b style="color:var(--bad)">Error:</b> ${err.message}</div>`;
+  }
+}
+
+/* ───────────────────────── RESUMEN ───────────────────────── */
+async function renderResumen(main) {
+  const [resumen, pedidos, alertas, cronograma] = await Promise.all([
+    api('/finanzas/resumen'), api('/pedidos'), api('/materiales/alertas'), api('/pedidos/cronograma'),
+  ]);
+  const activos = pedidos.filter(p => p.estado_produccion !== 'despachado');
+  const atrasados = cronograma.filter(p => p.atrasado);
+
+  main.innerHTML = `
+    <div class="grid">
+      <div class="stat"><div class="label">Salud de caja</div><div class="value ${resumen.salud_caja >= 0 ? 'good' : 'bad'}">${fmt(resumen.salud_caja)}</div></div>
+      <div class="stat"><div class="label">Ingresos confirmados</div><div class="value">${fmt(resumen.ingresos_confirmados)}</div></div>
+      <div class="stat"><div class="label">Ingresos proyectados</div><div class="value">${fmt(resumen.ingresos_proyectados)}</div></div>
+      <div class="stat"><div class="label">Pedidos activos</div><div class="value">${activos.length}</div></div>
+      <div class="stat"><div class="label">Pedidos atrasados</div><div class="value ${atrasados.length ? 'bad' : ''}">${atrasados.length}</div></div>
+      <div class="stat"><div class="label">Alertas de stock</div><div class="value ${alertas.length ? 'bad' : ''}">${alertas.length}</div></div>
+    </div>
+    <div class="card">
+      <h2>Pedidos activos</h2>
+      ${activos.length ? tablaPedidos(activos) : '<div class="empty">No hay pedidos activos.</div>'}
+    </div>
+    ${alertas.length ? `<div class="card"><h2>Materiales bajo stock mínimo</h2>${tablaAlertas(alertas)}</div>` : ''}
+  `;
+}
+
+function tablaPedidos(pedidos) {
+  return `<table><thead><tr><th>N.°</th><th>Cliente</th><th>Entrega est.</th><th>Estado</th><th class="num">Total</th></tr></thead><tbody>
+    ${pedidos.map(p => `<tr>
+      <td>${p.numero}</td><td>${p.cliente_nombre || '—'}</td><td>${p.fecha_entrega_estimada || '—'}</td>
+      <td><span class="pill ${p.estado_produccion}">${etiquetaEstado(p.estado_produccion)}</span></td>
+      <td class="num">${fmt(p.total)}</td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+function tablaAlertas(materiales) {
+  return `<table><thead><tr><th>Material</th><th class="num">Stock actual</th><th class="num">Mínimo</th></tr></thead><tbody>
+    ${materiales.map(m => `<tr><td>${m.nombre}</td><td class="num" style="color:var(--bad)">${m.stock_actual} ${m.unidad}</td><td class="num">${m.stock_minimo} ${m.unidad}</td></tr>`).join('')}
+  </tbody></table>`;
+}
+function etiquetaEstado(e) {
+  return { por_fabricar: 'Por fabricar', en_produccion: 'En producción', listo_despacho: 'Listo despacho', despachado: 'Despachado' }[e] || e;
+}
+
+/* ───────────────────────── COTIZADOR · PEDIDOS ───────────────────────── */
+let cotItems = [];
+let cotTier = 0;
+let cotDocType = 'cotizacion';
+let productosCache = [];
+let clientesCache = [];
+
+async function renderCotizador(main) {
+  const [productos, clientes, cotizaciones] = await Promise.all([
+    api('/productos?activos=1'), api('/clientes'), api('/cotizaciones'),
+  ]);
+  productosCache = productos; clientesCache = clientes;
+
+  main.innerHTML = `
+    <div class="card">
+      <h2>Tipo de documento</h2>
+      <div class="tier-group" id="docTypeGroup">
+        <div class="tier-btn ${cotDocType==='cotizacion'?'active':''}" data-doctype="cotizacion">Cotización</div>
+        <div class="tier-btn ${cotDocType==='orden_venta'?'active':''}" data-doctype="orden_venta">Orden de venta</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Cliente</h2>
+      <div class="row">
+        <div class="field"><label>Cliente existente</label>
+          <select id="clienteSelect"><option value="">— nuevo cliente —</option>
+            ${clientes.map(c => `<option value="${c.id}">${c.nombre}${c.telefono ? ' — ' + c.telefono : ''}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Nombre</label><input id="clienteNombre" placeholder="Nombre del cliente o empresa"></div>
+        <div class="field"><label>Teléfono</label><input id="clienteTelefono" placeholder="+57 300 000 0000"></div>
+        <div class="field"><label>Dirección</label><input id="clienteDireccion" placeholder="Ciudad, dirección de entrega"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Lista de precios</h2>
+      <div class="tier-group" id="tierGroup">
+        <div class="tier-btn ${cotTier===0?'active':''}" data-discount="0">Público<br><span style="font-weight:400">0%</span></div>
+        <div class="tier-btn ${cotTier===10?'active':''}" data-discount="10">Restaurante / hospitality<br><span style="font-weight:400">-10%</span></div>
+        <div class="tier-btn ${cotTier===15?'active':''}" data-discount="15">Proyecto especial<br><span style="font-weight:400">-15%</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Agregar producto del catálogo</h2>
+      <div class="row">
+        <div class="field"><label>Producto</label>
+          <select id="productSelect">${productos.map(p => `<option value="${p.id}">${p.nombre}${p.variante?' '+p.variante:''} — ${fmt(p.precio_final)}</option>`).join('')}</select>
+        </div>
+        <div class="field" style="max-width:100px;"><label>Cantidad</label><input type="number" id="qtyInput" value="1" min="1"></div>
+        <div class="field" style="max-width:auto; flex:0;"><button class="primary" id="btnAddItem" style="margin-top:20px;">Agregar</button></div>
+      </div>
+      <h2 style="margin-top:10px;">Producto personalizado</h2>
+      <div class="row">
+        <div class="field"><label>Nombre</label><input id="customName" placeholder="Ej: Butaco Sabina — prototipo cuero cognac"></div>
+        <div class="field" style="max-width:140px;"><label>Precio unit.</label><input type="number" id="customPrice" placeholder="0"></div>
+        <div class="field" style="max-width:90px;"><label>Cant.</label><input type="number" id="customQty" value="1" min="1"></div>
+        <div class="field" style="max-width:auto; flex:0;"><button class="primary" id="btnAddCustom" style="margin-top:20px;">Agregar</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Detalle</h2>
+      <table><thead><tr><th>Producto</th><th class="num">Precio unit.</th><th class="num">Dto %</th><th class="num">Cant.</th><th class="num">Subtotal</th><th></th></tr></thead>
+      <tbody id="itemsBody"></tbody></table>
+      <div class="empty" id="emptyMsg" style="${cotItems.length?'display:none;':''}">Aún no has agregado productos.</div>
+      <div class="row" style="justify-content:flex-end; margin-top:10px;">
+        <div class="field" style="max-width:120px;"><label>IVA %</label><input type="number" id="ivaInput" value="0" min="0" max="30"></div>
+        <div class="field" style="max-width:160px;"><label>Envío (COP)</label><input type="number" id="envioInput" value="0" min="0"></div>
+        <div class="field" style="max-width:180px; ${cotDocType==='orden_venta'?'':'display:none;'}" id="anticipoField"><label>Anticipo (COP)</label><input type="number" id="anticipoInput" value="0" min="0"></div>
+      </div>
+      <div class="totals" id="totalsBox"></div>
+    </div>
+
+    <div class="card">
+      <h2>Condiciones</h2>
+      <div class="row">
+        <div class="field"><label>Tiempo de producción</label><textarea id="condProduccion">Cada pieza se fabrica bajo pedido. Tiempo de producción: 15 días hábiles a partir de la confirmación.</textarea></div>
+        <div class="field"><label>Condiciones de pago</label><textarea id="condPago">50% de anticipo para iniciar producción, 50% restante contraentrega.</textarea></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Medios de pago</label><textarea id="condMedios">Transferencia bancaria, PSE o tarjeta de crédito/débito.</textarea></div>
+        <div class="field"><label>Envío</label><textarea id="condEnvio">3 a 5 días hábiles a nivel nacional, con embalaje especializado y guía de rastreo incluida.</textarea></div>
+      </div>
+      <div class="row"><div class="field"><label>Nota</label><textarea id="notaText" placeholder="Acuerdos con el cliente, observaciones..."></textarea></div></div>
+    </div>
+
+    <div class="row">
+      <button class="burnt" id="btnGuardar">Guardar ${cotDocType==='orden_venta'?'orden de venta':'cotización'}</button>
+    </div>
+
+    <div class="card">
+      <h2>Cotizaciones y órdenes recientes</h2>
+      ${cotizaciones.length ? tablaCotizaciones(cotizaciones) : '<div class="empty">Aún no hay cotizaciones.</div>'}
+    </div>
+
+    <div class="card">
+      <h2>Pedidos</h2>
+      <div id="pedidosResumen" class="empty">Cargando…</div>
+    </div>
+  `;
+
+  bindCotizadorEvents();
+  renderItems();
+  api('/pedidos').then(pedidos => {
+    document.getElementById('pedidosResumen').outerHTML = pedidos.length
+      ? `<div>${tablaPedidos(pedidos)}</div>` : '<div class="empty">Aún no hay pedidos.</div>';
+  });
+}
+
+function tablaCotizaciones(cotizaciones) {
+  return `<table><thead><tr><th>N.°</th><th>Tipo</th><th>Cliente</th><th class="num">Total</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${cotizaciones.map(c => `<tr>
+      <td>${c.numero}</td><td>${c.modo === 'orden_venta' ? 'Orden de venta' : 'Cotización'}</td>
+      <td>${c.cliente_nombre || '—'}</td><td class="num">${fmt(c.total)}</td>
+      <td><span class="pill ${c.estado==='aceptada'?'listo_despacho':'por_fabricar'}">${c.estado}</span></td>
+      <td>${c.estado !== 'aceptada' ? `<button class="ghost" onclick="aceptarCotizacion(${c.id})">Aceptar → crear pedido</button>` : '<span class="muted">Ya generó pedido</span>'}</td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+async function aceptarCotizacion(id) {
+  const fecha = prompt('Fecha de entrega estimada (AAAA-MM-DD):', '');
+  try {
+    await api(`/cotizaciones/${id}/aceptar`, { method: 'POST', body: JSON.stringify({ fecha_entrega_estimada: fecha || null }) });
+    alert('Pedido creado a partir de la cotización.');
+    renderMain();
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+function bindCotizadorEvents() {
+  document.getElementById('docTypeGroup').addEventListener('click', (e) => {
+    const btn = e.target.closest('.tier-btn'); if (!btn) return;
+    cotDocType = btn.dataset.doctype; renderMain();
+  });
+  document.getElementById('tierGroup').addEventListener('click', (e) => {
+    const btn = e.target.closest('.tier-btn'); if (!btn) return;
+    document.querySelectorAll('#tierGroup .tier-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    cotTier = parseFloat(btn.dataset.discount);
+  });
+  document.getElementById('clienteSelect').addEventListener('change', (e) => {
+    const c = clientesCache.find(c => String(c.id) === e.target.value);
+    if (c) {
+      document.getElementById('clienteNombre').value = c.nombre || '';
+      document.getElementById('clienteTelefono').value = c.telefono || '';
+      document.getElementById('clienteDireccion').value = c.ciudad || '';
+    }
+  });
+  document.getElementById('btnAddItem').addEventListener('click', () => {
+    const sel = document.getElementById('productSelect');
+    const p = productosCache.find(p => String(p.id) === sel.value);
+    const qty = Math.max(1, parseInt(document.getElementById('qtyInput').value) || 1);
+    if (!p) return;
+    cotItems.push({ producto_id: p.id, nombre: p.nombre + (p.variante ? ' ' + p.variante : ''), precio_unitario: p.precio_final, descuento_pct: cotTier, cantidad: qty, imagen_url: p.imagen_url });
+    renderItems();
+  });
+  document.getElementById('btnAddCustom').addEventListener('click', () => {
+    const nombre = document.getElementById('customName').value.trim();
+    const price = parseFloat(document.getElementById('customPrice').value) || 0;
+    const qty = Math.max(1, parseInt(document.getElementById('customQty').value) || 1);
+    if (!nombre) return alert('Escribe el nombre del producto personalizado.');
+    cotItems.push({ producto_id: null, nombre, precio_unitario: price, descuento_pct: cotTier, cantidad: qty });
+    document.getElementById('customName').value = ''; document.getElementById('customPrice').value = '';
+    renderItems();
+  });
+  ['ivaInput','envioInput','anticipoInput'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.addEventListener('input', renderItems);
+  });
+  document.getElementById('btnGuardar').addEventListener('click', guardarCotizacion);
+}
+
+function renderItems() {
+  const body = document.getElementById('itemsBody');
+  const empty = document.getElementById('emptyMsg');
+  body.innerHTML = '';
+  empty.style.display = cotItems.length ? 'none' : 'block';
+  let subtotal = 0;
+  cotItems.forEach((it, idx) => {
+    const lineTotal = it.precio_unitario * it.cantidad * (1 - (it.descuento_pct||0)/100);
+    subtotal += lineTotal;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${it.nombre}</td><td class="num">${fmt(it.precio_unitario)}</td>
+      <td class="num">${it.descuento_pct||0}%</td><td class="num">${it.cantidad}</td>
+      <td class="num">${fmt(lineTotal)}</td>
+      <td><button class="ghost" onclick="quitarItem(${idx})">Quitar</button></td>`;
+    body.appendChild(tr);
+  });
+  const ivaPct = parseFloat(document.getElementById('ivaInput')?.value) || 0;
+  const iva = subtotal * (ivaPct/100);
+  const envio = parseFloat(document.getElementById('envioInput')?.value) || 0;
+  const total = subtotal + iva + envio;
+  const anticipo = cotDocType === 'orden_venta' ? (parseFloat(document.getElementById('anticipoInput')?.value) || 0) : 0;
+  const saldo = Math.max(0, total - anticipo);
+  document.getElementById('totalsBox').innerHTML = `
+    <div class="sub">Subtotal: ${fmt(subtotal)}</div>
+    ${ivaPct>0?`<div class="sub">IVA (${ivaPct}%): ${fmt(iva)}</div>`:''}
+    ${envio>0?`<div class="sub">Envío: ${fmt(envio)}</div>`:''}
+    ${anticipo>0?`<div class="sub">Total: ${fmt(total)}</div><div class="sub">Anticipo: −${fmt(anticipo)}</div><div class="sub" style="font-weight:600;">Saldo pendiente</div>`:''}
+    <div class="grand">${fmt(anticipo>0?saldo:total)}</div>
+  `;
+}
+function quitarItem(idx) { cotItems.splice(idx,1); renderItems(); }
+
+async function guardarCotizacion() {
+  if (!cotItems.length) return alert('Agrega al menos un producto.');
+  const payload = {
+    cliente_nombre: document.getElementById('clienteNombre').value || null,
+    cliente_telefono: document.getElementById('clienteTelefono').value || null,
+    cliente_direccion: document.getElementById('clienteDireccion').value || null,
+    modo: cotDocType,
+    items: cotItems,
+    iva_pct: parseFloat(document.getElementById('ivaInput').value) || 0,
+    envio: parseFloat(document.getElementById('envioInput').value) || 0,
+    anticipo: cotDocType === 'orden_venta' ? (parseFloat(document.getElementById('anticipoInput').value) || 0) : 0,
+    condiciones: {
+      produccion: document.getElementById('condProduccion').value,
+      pago: document.getElementById('condPago').value,
+      medios: document.getElementById('condMedios').value,
+      envio: document.getElementById('condEnvio').value,
+    },
+    nota: document.getElementById('notaText').value || null,
+    fecha: todayStr(),
+  };
+  const clienteSelId = document.getElementById('clienteSelect').value;
+  if (clienteSelId) payload.cliente_id = parseInt(clienteSelId, 10);
+  else if (payload.cliente_nombre) {
+    try {
+      const nuevo = await api('/clientes', { method: 'POST', body: JSON.stringify({ nombre: payload.cliente_nombre, telefono: payload.cliente_telefono, ciudad: payload.cliente_direccion }) });
+      payload.cliente_id = nuevo.id;
+    } catch (e) { /* si falla (ej. teléfono duplicado) seguimos sin cliente_id */ }
+  }
+  try {
+    await api('/cotizaciones', { method: 'POST', body: JSON.stringify(payload) });
+    cotItems = [];
+    alert('Guardado correctamente.');
+    renderMain();
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+/* ───────────────────────── PRODUCCIÓN ───────────────────────── */
+const ESTADOS = ['por_fabricar','en_produccion','listo_despacho','despachado'];
+async function renderProduccion(main) {
+  const pedidos = await api('/pedidos');
+  main.innerHTML = `<div class="card"><h2>Tablero de producción</h2>
+    <div class="kanban">${ESTADOS.map(e => `
+      <div class="kanban-col"><h3>${etiquetaEstado(e)}</h3>
+        ${pedidos.filter(p => p.estado_produccion === e).map(p => `
+          <div class="kanban-card">
+            <b>${p.numero}</b>
+            <div class="muted">${p.cliente_nombre || '—'}</div>
+            <div class="muted">Entrega: ${p.fecha_entrega_estimada || '—'}</div>
+            <div class="muted">${fmt(p.total)}</div>
+            <div class="actions">
+              ${siguienteEstado(e) ? `<button class="ghost" onclick="avanzarPedido(${p.id}, '${siguienteEstado(e)}')">Avanzar →</button>` : ''}
+            </div>
+          </div>`).join('') || '<div class="muted" style="font-size:12px;">Vacío</div>'}
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+function siguienteEstado(actual) {
+  const idx = ESTADOS.indexOf(actual);
+  return idx < ESTADOS.length - 1 ? ESTADOS[idx+1] : null;
+}
+async function avanzarPedido(id, estado) {
+  try { await api(`/pedidos/${id}/estado`, { method: 'PUT', body: JSON.stringify({ estado }) }); renderMain(); }
+  catch (err) { alert('Error: ' + err.message); }
+}
+
+/* ───────────────────────── CRONOGRAMA ───────────────────────── */
+async function renderCronograma(main) {
+  const pedidos = await api('/pedidos/cronograma');
+  main.innerHTML = `<div class="card"><h2>Cronograma de entregas</h2>
+    ${pedidos.length ? `<table><thead><tr><th>N.°</th><th>Cliente</th><th>Fecha entrega</th><th>Estado</th><th></th></tr></thead><tbody>
+      ${pedidos.map(p => `<tr>
+        <td>${p.numero}</td><td>${p.cliente_nombre||'—'}</td><td>${p.fecha_entrega_estimada||'—'}</td>
+        <td><span class="pill ${p.estado_produccion}">${etiquetaEstado(p.estado_produccion)}</span></td>
+        <td>${p.atrasado ? '<span class="pill atrasado">Atrasado</span>' : ''}</td>
+      </tr>`).join('')}</tbody></table>` : '<div class="empty">No hay pedidos pendientes.</div>'}
+  </div>`;
+}
+
+/* ───────────────────────── INVENTARIO ───────────────────────── */
+async function renderInventario(main) {
+  const materiales = await api('/materiales');
+  main.innerHTML = `
+    <div class="card">
+      <h2>Agregar material</h2>
+      <div class="row">
+        <div class="field"><label>Nombre</label><input id="matNombre" placeholder="Ej: Tubo metálico 1/2 pulgada"></div>
+        <div class="field" style="max-width:120px;"><label>Unidad</label><input id="matUnidad" placeholder="metro"></div>
+        <div class="field" style="max-width:120px;"><label>Stock actual</label><input type="number" id="matStock" value="0"></div>
+        <div class="field" style="max-width:120px;"><label>Stock mínimo</label><input type="number" id="matMinimo" value="0"></div>
+        <div class="field" style="max-width:140px;"><label>Costo unitario</label><input type="number" id="matCosto" value="0"></div>
+      </div>
+      <button class="primary" id="btnAddMat">Agregar material</button>
+    </div>
+    <div class="card"><h2>Materiales</h2>
+      ${materiales.length ? `<table><thead><tr><th>Material</th><th class="num">Stock</th><th class="num">Mínimo</th><th class="num">Costo unit.</th><th></th></tr></thead><tbody>
+        ${materiales.map(m => `<tr>
+          <td>${m.nombre}${m.stock_actual <= m.stock_minimo ? ' <span class="pill atrasado">bajo</span>' : ''}</td>
+          <td class="num">${m.stock_actual} ${m.unidad}</td><td class="num">${m.stock_minimo} ${m.unidad}</td>
+          <td class="num">${fmt(m.costo_unitario)}</td>
+          <td><button class="ghost" onclick="movimientoMaterial(${m.id})">Registrar entrada/salida</button></td>
+        </tr>`).join('')}</tbody></table>` : '<div class="empty">Aún no hay materiales registrados.</div>'}
+    </div>
+  `;
+  document.getElementById('btnAddMat').addEventListener('click', async () => {
+    const nombre = document.getElementById('matNombre').value.trim();
+    if (!nombre) return alert('Escribe el nombre del material.');
+    try {
+      await api('/materiales', { method: 'POST', body: JSON.stringify({
+        nombre, unidad: document.getElementById('matUnidad').value || 'unidad',
+        stock_actual: parseFloat(document.getElementById('matStock').value) || 0,
+        stock_minimo: parseFloat(document.getElementById('matMinimo').value) || 0,
+        costo_unitario: parseFloat(document.getElementById('matCosto').value) || 0,
+      })});
+      renderMain();
+    } catch (err) { alert('Error: ' + err.message); }
+  });
+}
+async function movimientoMaterial(id) {
+  const tipo = prompt('Tipo de movimiento: entrada, salida o ajuste', 'entrada');
+  if (!tipo) return;
+  const cantidad = parseFloat(prompt('Cantidad' + (tipo==='ajuste' ? ' (nuevo stock total)' : ''), '0'));
+  if (isNaN(cantidad)) return;
+  try {
+    await api(`/materiales/${id}/movimiento`, { method: 'POST', body: JSON.stringify({ tipo, cantidad, motivo: 'Registro manual' }) });
+    renderMain();
+  } catch (err) { alert('Error: ' + err.message); }
+}
+
+/* ───────────────────────── FINANCIERO ───────────────────────── */
+async function renderFinanciero(main) {
+  const [resumen, transacciones] = await Promise.all([api('/finanzas/resumen'), api('/finanzas')]);
+  main.innerHTML = `
+    <div class="grid">
+      <div class="stat"><div class="label">Salud de caja</div><div class="value ${resumen.salud_caja>=0?'good':'bad'}">${fmt(resumen.salud_caja)}</div></div>
+      <div class="stat"><div class="label">Ingresos confirmados</div><div class="value">${fmt(resumen.ingresos_confirmados)}</div></div>
+      <div class="stat"><div class="label">Ingresos proyectados</div><div class="value">${fmt(resumen.ingresos_proyectados)}</div></div>
+      <div class="stat"><div class="label">Gastos</div><div class="value">${fmt(resumen.gastos)}</div></div>
+    </div>
+    <div class="card">
+      <h2>Registrar transacción</h2>
+      <div class="row">
+        <div class="field" style="max-width:140px;"><label>Tipo</label>
+          <select id="txTipo"><option value="ingreso">Ingreso</option><option value="gasto">Gasto</option></select></div>
+        <div class="field"><label>Categoría</label><input id="txCategoria" placeholder="materia_prima, nómina, marketing..."></div>
+        <div class="field" style="max-width:160px;"><label>Monto (COP)</label><input type="number" id="txMonto" value="0"></div>
+        <div class="field"><label>Descripción</label><input id="txDescripcion"></div>
+        <div class="field" style="max-width:auto; flex:0;"><button class="primary" id="btnAddTx" style="margin-top:20px;">Registrar</button></div>
+      </div>
+    </div>
+    <div class="card"><h2>Margen por producto (pedidos despachados)</h2>
+      ${resumen.margen_por_producto.length ? `<table><thead><tr><th>Producto</th><th class="num">Unidades</th><th class="num">Ingresos</th><th class="num">Costos</th><th class="num">Utilidad</th></tr></thead><tbody>
+        ${resumen.margen_por_producto.map(m => `<tr><td>${m.nombre}</td><td class="num">${m.unidades_vendidas}</td><td class="num">${fmt(m.ingresos)}</td><td class="num">${fmt(m.costos)}</td><td class="num">${fmt(m.utilidad)}</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty">Aún no hay pedidos despachados para calcular margen.</div>'}
+    </div>
+    <div class="card"><h2>Transacciones</h2>
+      ${transacciones.length ? `<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Descripción</th><th>Estado</th><th class="num">Monto</th></tr></thead><tbody>
+        ${transacciones.map(t => `<tr><td>${t.fecha}</td><td>${t.tipo}</td><td>${t.categoria}</td><td>${t.descripcion||'—'}</td><td>${t.estado}</td><td class="num">${fmt(t.monto)}</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty">Aún no hay transacciones.</div>'}
+    </div>
+  `;
+  document.getElementById('btnAddTx').addEventListener('click', async () => {
+    const monto = parseFloat(document.getElementById('txMonto').value);
+    if (!monto) return alert('Ingresa un monto.');
+    try {
+      await api('/finanzas', { method: 'POST', body: JSON.stringify({
+        tipo: document.getElementById('txTipo').value,
+        categoria: document.getElementById('txCategoria').value || 'otros',
+        monto, descripcion: document.getElementById('txDescripcion').value || null, fecha: todayStr(),
+      })});
+      renderMain();
+    } catch (err) { alert('Error: ' + err.message); }
+  });
+}
+
+renderNav();
+renderMain();
+</script>
+</body>
+</html>

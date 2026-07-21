@@ -1,0 +1,19 @@
+{
+  "name": "geometrico-erp",
+  "version": "1.0.0",
+  "description": "Sistema de Control Integral de Geometrico — clientes, cotizaciones, producción, inventario y finanzas en un solo panel",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "express": "^4.21.2"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
