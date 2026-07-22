@@ -81,6 +81,10 @@ Se decidió (ver `output/erp-diseno-tecnico.md`, sección 1) crear un servicio n
 
 Este proyecto usa `better-sqlite3` (igual que `geometrico-agente-whatsapp`, ya probado en producción). Requiere compilar un módulo nativo durante `npm install` — Railway lo hace automáticamente en su entorno de build con acceso completo a internet.
 
+## Nota técnica: `</script>` dentro de un `<script>`
+
+Si alguna vez tocas `generarPdfCotizacion` en `public/index.html`, ten cuidado: el HTML del documento imprimible se genera como una cadena de texto *dentro* del `<script>` principal del panel. Cualquier `</script>` literal dentro de esa cadena cierra el `<script>` de toda la página en el navegador (el parser de HTML no distingue que está dentro de un string de JS), y el resto del código se muestra como texto plano en pantalla. Por eso está escrito como `<\/script>` (con backslash) — no lo quites.
+
 ## Completar antes de confiar 100% en el módulo financiero
 
 1. **Costos de productos:** revisa que cada producto activo tenga su costo real cargado — sin esto, el costo de venta automático (COGS) queda en 0 y la utilidad se ve inflada.
