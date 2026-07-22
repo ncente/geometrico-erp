@@ -40,7 +40,9 @@ router.post('/', (req, res) => {
   const iva = Math.round(subtotal * (ivaPctNum / 100));
   const envioNum = envio || 0;
   const total = Math.round(subtotal + iva + envioNum);
-  const anticipoNum = modo === 'orden_venta' ? (anticipo || 0) : 0;
+  // El anticipo se puede registrar en cualquier modo — muchos clientes consignan antes de
+  // que la cotización pase formalmente a orden de venta.
+  const anticipoNum = anticipo || 0;
   const saldo = Math.max(0, total - anticipoNum);
 
   const prefijo = modo === 'orden_venta' ? 'ORD' : 'COT';
@@ -132,7 +134,7 @@ router.put('/:id', (req, res) => {
     const envioNum = envio !== undefined ? envio : existing.envio;
     const iva = Math.round(subtotal * (ivaPctNum / 100));
     const total = Math.round(subtotal + iva + envioNum);
-    const anticipoNum = existing.modo === 'orden_venta' ? (anticipo !== undefined ? anticipo : existing.anticipo) : 0;
+    const anticipoNum = anticipo !== undefined ? anticipo : existing.anticipo;
     const saldo = Math.max(0, total - anticipoNum);
 
     db.prepare(
@@ -178,6 +180,33 @@ router.post('/:id/aceptar', (req, res) => {
 router.delete('/:id', (req, res) => {
   const info = db.prepare('DELETE FROM cotizaciones WHERE id = ?').run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Cotización no encontrada' });
+  res.json({ ok: true });
+});
+
+// ── Comprobantes de pago (consignaciones/vouchers) ──
+// Se suben después de creada la cotización/orden — normalmente el cliente envía el comprobante
+// por WhatsApp una vez ya existe el documento. Se guardan como imagen (data URI) en la base,
+// así quedan disponibles desde cualquier dispositivo y se pueden incluir en el PDF.
+router.get('/:id/comprobantes', (req, res) => {
+  const cot = db.prepare('SELECT id FROM cotizaciones WHERE id = ?').get(req.params.id);
+  if (!cot) return res.status(404).json({ error: 'Cotización no encontrada' });
+  res.json(db.prepare('SELECT * FROM comprobantes WHERE cotizacion_id = ? ORDER BY creado_en').all(req.params.id));
+});
+
+router.post('/:id/comprobantes', (req, res) => {
+  const cot = db.prepare('SELECT id FROM cotizaciones WHERE id = ?').get(req.params.id);
+  if (!cot) return res.status(404).json({ error: 'Cotización no encontrada' });
+  const { imagen, nombre } = req.body;
+  if (!imagen) return res.status(400).json({ error: 'imagen es requerida (data URI base64)' });
+  const info = db
+    .prepare('INSERT INTO comprobantes (cotizacion_id, imagen, nombre) VALUES (?, ?, ?)')
+    .run(req.params.id, imagen, nombre || null);
+  res.status(201).json(db.prepare('SELECT * FROM comprobantes WHERE id = ?').get(info.lastInsertRowid));
+});
+
+router.delete('/:id/comprobantes/:comprobanteId', (req, res) => {
+  const info = db.prepare('DELETE FROM comprobantes WHERE id = ? AND cotizacion_id = ?').run(req.params.comprobanteId, req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Comprobante no encontrado' });
   res.json({ ok: true });
 });
 

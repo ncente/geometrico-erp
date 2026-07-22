@@ -129,6 +129,14 @@ CREATE TABLE IF NOT EXISTS movimientos_inventario (
   fecha         INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
+CREATE TABLE IF NOT EXISTS comprobantes (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  cotizacion_id   INTEGER NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE,
+  imagen          TEXT NOT NULL,   -- data URI base64 (foto de la consignación/voucher)
+  nombre          TEXT,
+  creado_en       INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+);
+
 CREATE TABLE IF NOT EXISTS transacciones_financieras (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   tipo          TEXT NOT NULL,    -- ingreso | gasto
