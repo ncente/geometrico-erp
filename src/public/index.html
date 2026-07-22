@@ -107,6 +107,29 @@ let currentTab = 'resumen';
 function fmt(n) { return 'COP ' + Math.round(n || 0).toLocaleString('es-CO'); }
 function todayStr() { return new Date().toISOString().slice(0,10); }
 
+const GARANTIA_DEFAULT = `Mobiliario metálico con acabado en pintura electrostática. Nuestros productos tienen un (1) año de garantía por materiales o manufactura que afecten la seguridad o funcionalidad del producto.
+
+LA GARANTÍA NO APLICA EN LOS SIGUIENTES CASOS
+- Degradación del producto por factores ambientales.
+- Daños causados por el uso erróneo de los productos.
+- Desgaste natural de los productos no relacionado con un defecto de fabricación.
+- Deterioro en estructura y demás materiales ocasionado por uso indebido, golpes, productos químicos o factores ambientales.
+
+RECOMENDACIONES DE LIMPIEZA
+- Emplee un trapo suave húmedo.
+- Al limpiar una estructura tratada con pintura electrostática, seque totalmente la pieza: la humedad sobre la superficie puede deteriorar el acabado.
+- No utilice solventes (thinners, éteres, cetonas) ni limpiadores abrasivos, para no dañar el recubrimiento.
+- Use únicamente limpiadores neutros con pH balanceado para los tapizados.
+- Evite completamente productos abrasivos, esponjas o cepillos duros.
+
+RECEPCIÓN Y NOVEDADES DE TRANSPORTE
+Es indispensable que, al recibir la mercancía, revise la guía de transporte antes de firmar a conformidad, para corroborar que no ha sufrido ningún daño durante el traslado. En caso de presentarse novedades, notificar de inmediato o en un plazo no mayor a 24 horas, para hacer efectivo el seguro de transporte que cubre la mercancía.
+
+PROCESO DE GARANTÍA
+En caso de una garantía válida, se asume la reposición o reparación según se considere más efectivo para el caso. El cliente debe asumir el empaque del producto y el transporte de un (1) trayecto: será recogido en la dirección donde fue entregado. Una vez verificada la procedencia de la garantía, el producto se envía a verificación y reparación. Este proceso puede tardar hasta 10 días hábiles, extendibles hasta 15 días hábiles a partir del momento en que se recibe la pieza afectada en el taller, según el tipo de falla.`;
+
+
+
 async function api(path, opts) {
   const res = await fetch('/api' + path, {
     headers: { 'Content-Type': 'application/json' },
@@ -170,20 +193,38 @@ async function renderResumen(main) {
     </div>
     <div class="card">
       <h2>Pedidos activos</h2>
-      ${activos.length ? tablaPedidos(activos) : '<div class="empty">No hay pedidos activos.</div>'}
+      ${activos.length ? tablaPedidos(activos, true) : '<div class="empty">No hay pedidos activos.</div>'}
     </div>
     ${alertas.length ? `<div class="card"><h2>Materiales bajo stock mínimo</h2>${tablaAlertas(alertas)}</div>` : ''}
   `;
 }
 
-function tablaPedidos(pedidos) {
-  return `<table><thead><tr><th>N.°</th><th>Cliente</th><th>Entrega est.</th><th>Estado</th><th class="num">Total</th></tr></thead><tbody>
+function tablaPedidos(pedidos, editable) {
+  return `<table><thead><tr><th>N.°</th><th>Cliente</th><th>Teléfono</th><th>Dirección</th><th>Entrega est.</th><th>Estado</th><th class="num">Total</th>${editable?'<th></th>':''}</tr></thead><tbody>
     ${pedidos.map(p => `<tr>
-      <td>${p.numero}</td><td>${p.cliente_nombre || '—'}</td><td>${p.fecha_entrega_estimada || '—'}</td>
+      <td>${p.numero}</td><td>${p.cliente_nombre || '—'}</td><td>${p.cliente_telefono || '—'}</td><td>${p.cliente_direccion || '—'}</td><td>${p.fecha_entrega_estimada || '—'}</td>
       <td><span class="pill ${p.estado_produccion}">${etiquetaEstado(p.estado_produccion)}</span></td>
       <td class="num">${fmt(p.total)}</td>
+      ${editable?`<td><button class="ghost" onclick="editarPedidoCliente(${p.id})">Editar cliente</button></td>`:''}
     </tr>`).join('')}
   </tbody></table>`;
+}
+
+// El cliente muchas veces solo da teléfono/dirección exacta hasta que se va a despachar —
+// por eso el pedido queda editable en cualquier estado, no solo al crearlo.
+async function editarPedidoCliente(id) {
+  const pedido = await api(`/pedidos/${id}`);
+  const cliente_nombre = prompt('Nombre del cliente:', pedido.cliente_nombre || '');
+  if (cliente_nombre === null) return;
+  const cliente_telefono = prompt('Teléfono:', pedido.cliente_telefono || '');
+  if (cliente_telefono === null) return;
+  const cliente_direccion = prompt('Dirección de entrega:', pedido.cliente_direccion || '');
+  if (cliente_direccion === null) return;
+  const fecha_entrega_estimada = prompt('Fecha de entrega estimada (AAAA-MM-DD):', pedido.fecha_entrega_estimada || '');
+  try {
+    await api(`/pedidos/${id}`, { method: 'PUT', body: JSON.stringify({ cliente_nombre, cliente_telefono, cliente_direccion, fecha_entrega_estimada: fecha_entrega_estimada || null }) });
+    renderMain();
+  } catch (err) { alert('Error: ' + err.message); }
 }
 function tablaAlertas(materiales) {
   return `<table><thead><tr><th>Material</th><th class="num">Stock actual</th><th class="num">Mínimo</th></tr></thead><tbody>
@@ -285,6 +326,11 @@ async function renderCotizador(main) {
       <div class="row"><div class="field"><label>Nota</label><textarea id="notaText" placeholder="Acuerdos con el cliente, observaciones..."></textarea></div></div>
     </div>
 
+    <div class="card">
+      <h2>Garantía (va impresa en el PDF)</h2>
+      <textarea id="garantiaText" style="min-height:160px; font-size:12.5px;">${GARANTIA_DEFAULT}</textarea>
+    </div>
+
     <div class="row">
       <button class="burnt" id="btnGuardar">Guardar ${cotDocType==='orden_venta'?'orden de venta':'cotización'}</button>
     </div>
@@ -304,19 +350,157 @@ async function renderCotizador(main) {
   renderItems();
   api('/pedidos').then(pedidos => {
     document.getElementById('pedidosResumen').outerHTML = pedidos.length
-      ? `<div>${tablaPedidos(pedidos)}</div>` : '<div class="empty">Aún no hay pedidos.</div>';
+      ? `<div>${tablaPedidos(pedidos, true)}</div>` : '<div class="empty">Aún no hay pedidos.</div>';
   });
 }
 
 function tablaCotizaciones(cotizaciones) {
-  return `<table><thead><tr><th>N.°</th><th>Tipo</th><th>Cliente</th><th class="num">Total</th><th>Estado</th><th></th></tr></thead><tbody>
+  return `<table><thead><tr><th>N.°</th><th>Tipo</th><th>Cliente</th><th>Teléfono</th><th>Dirección</th><th class="num">Total</th><th>Estado</th><th></th><th></th><th></th></tr></thead><tbody>
     ${cotizaciones.map(c => `<tr>
       <td>${c.numero}</td><td>${c.modo === 'orden_venta' ? 'Orden de venta' : 'Cotización'}</td>
-      <td>${c.cliente_nombre || '—'}</td><td class="num">${fmt(c.total)}</td>
+      <td>${c.cliente_nombre || '—'}</td><td>${c.cliente_telefono || '—'}</td><td>${c.cliente_direccion || '—'}</td><td class="num">${fmt(c.total)}</td>
       <td><span class="pill ${c.estado==='aceptada'?'listo_despacho':'por_fabricar'}">${c.estado}</span></td>
+      <td><button class="burnt" onclick="generarPdfCotizacion(${c.id})">Generar PDF</button></td>
+      <td><button class="ghost" onclick="editarCotizacionCliente(${c.id})">Editar cliente</button></td>
       <td>${c.estado !== 'aceptada' ? `<button class="ghost" onclick="aceptarCotizacion(${c.id})">Aceptar → crear pedido</button>` : '<span class="muted">Ya generó pedido</span>'}</td>
     </tr>`).join('')}
   </tbody></table>`;
+}
+
+// Genera el documento imprimible (cotización u orden de venta) para compartir con el cliente —
+// abre una pestaña nueva con el formato de marca y dispara el diálogo de impresión del navegador
+// (ahí el usuario elige "Guardar como PDF"). Se genera siempre desde los datos ya guardados,
+// así se puede reimprimir en cualquier momento, incluso después de editar el cliente.
+async function generarPdfCotizacion(id) {
+  const cot = await api(`/cotizaciones/${id}`);
+  const cond = cot.condiciones || {};
+  const isOrden = cot.modo === 'orden_venta';
+  const win = window.open('', '_blank');
+  if (!win) { alert('Tu navegador bloqueó la ventana emergente. Permite pop-ups para este sitio y vuelve a intentar.'); return; }
+
+  const filas = cot.items.map(it => {
+    const lineTotal = it.precio_unitario * it.cantidad * (1 - (it.descuento_pct||0)/100);
+    return `<tr>
+      <td>${it.imagen_url ? `<img src="${it.imagen_url}" class="thumb">` : ''}</td>
+      <td>${it.nombre}${it.detalle ? `<div class="muted-p">${it.detalle}</div>` : ''}</td>
+      <td class="num">${fmt(it.precio_unitario)}</td>
+      <td class="num">${it.descuento_pct||0}%</td>
+      <td class="num">${it.cantidad}</td>
+      <td class="num">${fmt(lineTotal)}</td>
+    </tr>`;
+  }).join('');
+
+  const totalesHtml = `
+    <div class="sub">Subtotal: ${fmt(cot.subtotal)}</div>
+    ${cot.iva_pct>0?`<div class="sub">IVA (${cot.iva_pct}%): ${fmt(cot.iva)}</div>`:''}
+    ${cot.envio>0?`<div class="sub">Envío: ${fmt(cot.envio)}</div>`:''}
+    ${cot.anticipo>0?`<div class="sub">Total: ${fmt(cot.total)}</div><div class="sub">Anticipo: −${fmt(cot.anticipo)}</div><div class="sub" style="font-weight:600;">Saldo pendiente</div>`:''}
+    <div class="grand">${fmt(cot.anticipo>0 ? cot.saldo : cot.total)}</div>
+  `;
+
+  const fichaProductos = cot.items.map(it => `
+    <div class="sheet-item">
+      ${it.imagen_url ? `<img src="${it.imagen_url}">` : ''}
+      <div>
+        <div style="font-weight:600; font-size:15px;">${it.nombre}</div>
+        ${it.detalle ? `<div class="muted-p">${it.detalle}</div>` : ''}
+        <div class="muted-p">Cantidad: ${it.cantidad} — ${fmt(it.precio_unitario)} c/u</div>
+      </div>
+    </div>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><title>${cot.numero} — Geometrico</title>
+<style>
+  :root { --cream:#F2E6D5; --cream-light:#F8F1E6; --ink:#1A1815; --burnt:#E05A00; --line:rgba(26,24,21,0.14); --line-strong:rgba(26,24,21,0.28); --muted:rgba(26,24,21,0.58); }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif; background:#fff; color:var(--ink); }
+  .wrap { max-width:800px; margin:0 auto; padding:28px; }
+  .brand { display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid var(--ink); padding-bottom:14px; margin-bottom:18px; }
+  .brand img { height:56px; width:auto; }
+  .brand span { font-size:12px; color:var(--muted); font-style:italic; }
+  .doc-title { font-size:16px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:14px; }
+  .client-row { display:flex; justify-content:space-between; font-size:13px; border-bottom:1px solid var(--line); padding-bottom:14px; margin-bottom:18px; flex-wrap:wrap; gap:10px; }
+  .client-row label { display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:0.04em; }
+  .client-row .val { font-weight:600; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); margin:22px 0 10px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; font-size:10.5px; text-transform:uppercase; color:var(--muted); padding:6px 4px; border-bottom:1.5px solid var(--ink); }
+  td { padding:9px 4px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  .num { text-align:right; }
+  .thumb { width:40px; height:40px; border-radius:5px; object-fit:cover; }
+  .muted-p { font-size:12px; color:var(--muted); }
+  .totals { margin-top:14px; text-align:right; }
+  .totals .sub { font-size:13px; color:var(--muted); margin-bottom:4px; }
+  .totals .grand { font-size:22px; font-weight:700; }
+  .cond-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; font-size:11.5px; line-height:1.5; color:var(--muted); }
+  .cond-grid h3 { font-size:11px; text-transform:uppercase; color:var(--ink); margin:0 0 4px; font-weight:700; }
+  .garantia { font-size:11.5px; line-height:1.6; color:var(--muted); white-space:pre-wrap; }
+  .page-break { page-break-before:always; }
+  .sheet-item { display:flex; gap:14px; align-items:center; margin-bottom:16px; border-bottom:1px solid var(--line); padding-bottom:14px; }
+  .sheet-item img { width:90px; height:90px; object-fit:cover; border-radius:8px; background:#eee; }
+  .footer { display:flex; gap:22px; justify-content:center; border-top:1px solid var(--line); margin-top:24px; padding-top:12px; color:var(--muted); font-size:12px; }
+  @page { margin:14mm 12mm 16mm 12mm; }
+</style></head>
+<body>
+<div class="wrap">
+  <div class="brand"><img src="${window.location.origin}/logo.png" alt="Geometrico"><span>somos la forma</span></div>
+  <div class="doc-title">${isOrden ? 'Orden de venta' : 'Cotización'}</div>
+  <div class="client-row">
+    <div><label>Cliente</label><div class="val">${cot.cliente_nombre || '—'}</div></div>
+    <div><label>Teléfono</label><div class="val">${cot.cliente_telefono || '—'}</div></div>
+    <div><label>Dirección</label><div class="val">${cot.cliente_direccion || '—'}</div></div>
+    <div><label>Fecha</label><div class="val">${cot.fecha || '—'}</div></div>
+    <div><label>N.° ${isOrden?'orden':'cotización'}</label><div class="val">${cot.numero}</div></div>
+  </div>
+
+  <table><thead><tr><th></th><th>Producto</th><th class="num">Precio unit.</th><th class="num">Dto %</th><th class="num">Cant.</th><th class="num">Subtotal</th></tr></thead>
+  <tbody>${filas}</tbody></table>
+  <div class="totals">${totalesHtml}</div>
+
+  <h2>Condiciones</h2>
+  <div class="cond-grid">
+    <div><h3>Tiempo de producción</h3>${cond.produccion || '—'}</div>
+    <div><h3>Condiciones de pago</h3>${cond.pago || '—'}</div>
+    <div><h3>Medios de pago</h3>${cond.medios || '—'}</div>
+    <div><h3>Envío</h3>${cond.envio || '—'}</div>
+  </div>
+
+  ${cot.nota ? `<h2>Nota</h2><div class="muted-p" style="white-space:pre-wrap;">${cot.nota}</div>` : ''}
+
+  <div class="footer"><span>+57 320 453 6916</span><span>www.geometrico.co</span><span>@geometrico.co</span></div>
+
+  <div class="page-break"></div>
+  <h2 style="margin-top:0;">Garantía</h2>
+  <div class="garantia">${cot.texto_garantia || GARANTIA_DEFAULT}</div>
+  <div class="footer"><span>+57 320 453 6916</span><span>www.geometrico.co</span><span>@geometrico.co</span></div>
+
+  <div class="page-break"></div>
+  <h2 style="margin-top:0;">Ficha de referencia de productos cotizados</h2>
+  ${fichaProductos}
+  <div class="footer"><span>+57 320 453 6916</span><span>www.geometrico.co</span><span>@geometrico.co</span></div>
+</div>
+<script>window.onload = () => setTimeout(() => window.print(), 300);</script>
+</body></html>`;
+
+  win.document.write(html);
+  win.document.close();
+}
+
+// Igual que con pedidos: muchos clientes solo confirman teléfono/dirección exacta más adelante.
+// Editable sin importar el estado (incluso ya 'aceptada') — si ya generó pedido, edita también
+// el pedido por separado en la pestaña Producción/Cronograma para que el despacho use el dato correcto.
+async function editarCotizacionCliente(id) {
+  const cot = await api(`/cotizaciones/${id}`);
+  const cliente_nombre = prompt('Nombre del cliente:', cot.cliente_nombre || '');
+  if (cliente_nombre === null) return;
+  const cliente_telefono = prompt('Teléfono:', cot.cliente_telefono || '');
+  if (cliente_telefono === null) return;
+  const cliente_direccion = prompt('Dirección de entrega:', cot.cliente_direccion || '');
+  if (cliente_direccion === null) return;
+  try {
+    await api(`/cotizaciones/${id}`, { method: 'PUT', body: JSON.stringify({ cliente_nombre, cliente_telefono, cliente_direccion }) });
+    renderMain();
+  } catch (err) { alert('Error: ' + err.message); }
 }
 
 async function aceptarCotizacion(id) {
@@ -420,6 +604,7 @@ async function guardarCotizacion() {
       envio: document.getElementById('condEnvio').value,
     },
     nota: document.getElementById('notaText').value || null,
+    texto_garantia: document.getElementById('garantiaText').value || null,
     fecha: todayStr(),
   };
   const clienteSelId = document.getElementById('clienteSelect').value;
@@ -472,11 +657,12 @@ async function avanzarPedido(id, estado) {
 async function renderCronograma(main) {
   const pedidos = await api('/pedidos/cronograma');
   main.innerHTML = `<div class="card"><h2>Cronograma de entregas</h2>
-    ${pedidos.length ? `<table><thead><tr><th>N.°</th><th>Cliente</th><th>Fecha entrega</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${pedidos.length ? `<table><thead><tr><th>N.°</th><th>Cliente</th><th>Teléfono</th><th>Dirección</th><th>Fecha entrega</th><th>Estado</th><th></th><th></th></tr></thead><tbody>
       ${pedidos.map(p => `<tr>
-        <td>${p.numero}</td><td>${p.cliente_nombre||'—'}</td><td>${p.fecha_entrega_estimada||'—'}</td>
+        <td>${p.numero}</td><td>${p.cliente_nombre||'—'}</td><td>${p.cliente_telefono||'—'}</td><td>${p.cliente_direccion||'—'}</td><td>${p.fecha_entrega_estimada||'—'}</td>
         <td><span class="pill ${p.estado_produccion}">${etiquetaEstado(p.estado_produccion)}</span></td>
         <td>${p.atrasado ? '<span class="pill atrasado">Atrasado</span>' : ''}</td>
+        <td><button class="ghost" onclick="editarPedidoCliente(${p.id})">Editar cliente</button></td>
       </tr>`).join('')}</tbody></table>` : '<div class="empty">No hay pedidos pendientes.</div>'}
   </div>`;
 }
@@ -535,11 +721,29 @@ async function movimientoMaterial(id) {
 async function renderFinanciero(main) {
   const [resumen, transacciones] = await Promise.all([api('/finanzas/resumen'), api('/finanzas')]);
   main.innerHTML = `
-    <div class="grid">
-      <div class="stat"><div class="label">Salud de caja</div><div class="value ${resumen.salud_caja>=0?'good':'bad'}">${fmt(resumen.salud_caja)}</div></div>
-      <div class="stat"><div class="label">Ingresos confirmados</div><div class="value">${fmt(resumen.ingresos_confirmados)}</div></div>
-      <div class="stat"><div class="label">Ingresos proyectados</div><div class="value">${fmt(resumen.ingresos_proyectados)}</div></div>
-      <div class="stat"><div class="label">Gastos</div><div class="value">${fmt(resumen.gastos)}</div></div>
+    <div class="card">
+      <h2>Caja real (después de costos)</h2>
+      <div class="grid">
+        <div class="stat"><div class="label">Salud de caja</div><div class="value ${resumen.salud_caja>=0?'good':'bad'}">${fmt(resumen.salud_caja)}</div>
+          <div class="muted" style="font-size:11px; margin-top:4px;">Ingresos confirmados − todos los gastos (incluye costo de venta)</div></div>
+        <div class="stat"><div class="label">Utilidad neta</div><div class="value ${resumen.utilidad_neta>=0?'good':'bad'}">${fmt(resumen.utilidad_neta)}</div></div>
+        <div class="stat"><div class="label">Margen bruto</div><div class="value">${resumen.margen_bruto_pct.toFixed(1)}%</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Ingreso vs. utilidad — no es lo mismo</h2>
+      <div class="grid">
+        <div class="stat"><div class="label">Ingresos confirmados (venta)</div><div class="value">${fmt(resumen.ingresos_confirmados)}</div>
+          <div class="muted" style="font-size:11px; margin-top:4px;">Lo que paga el cliente — incluye tu utilidad, no es ganancia todavía</div></div>
+        <div class="stat"><div class="label">Costo de venta (COGS)</div><div class="value bad">${fmt(resumen.costo_venta)}</div>
+          <div class="muted" style="font-size:11px; margin-top:4px;">Se registra solo al despachar, según el costo del producto</div></div>
+        <div class="stat"><div class="label">Utilidad bruta</div><div class="value ${resumen.utilidad_bruta>=0?'good':'bad'}">${fmt(resumen.utilidad_bruta)}</div>
+          <div class="muted" style="font-size:11px; margin-top:4px;">Ingresos − costo de venta = lo que de verdad ganaste</div></div>
+        <div class="stat"><div class="label">Gastos operativos</div><div class="value">${fmt(resumen.gastos_operativos)}</div>
+          <div class="muted" style="font-size:11px; margin-top:4px;">Nómina, marketing, arriendo... todo lo que no es costo de producto</div></div>
+        <div class="stat"><div class="label">Ingresos proyectados</div><div class="value">${fmt(resumen.ingresos_proyectados)}</div>
+          <div class="muted" style="font-size:11px; margin-top:4px;">Pedidos aún no despachados — dinero que va a entrar</div></div>
+      </div>
     </div>
     <div class="card">
       <h2>Registrar transacción</h2>
@@ -551,7 +755,13 @@ async function renderFinanciero(main) {
         <div class="field"><label>Descripción</label><input id="txDescripcion"></div>
         <div class="field" style="max-width:auto; flex:0;"><button class="primary" id="btnAddTx" style="margin-top:20px;">Registrar</button></div>
       </div>
+      <div class="muted" style="font-size:11.5px; margin-top:8px;">El costo de venta (COGS) no lo registras aquí — se genera solo al despachar un pedido, usando el costo del producto. Este formulario es para gastos operativos (nómina, marketing, arriendo, envíos, etc.) o ingresos que no vienen de un pedido.</div>
     </div>
+    ${resumen.tendencia_mensual.length ? `<div class="card"><h2>Tendencia mensual (últimos 6 meses)</h2>
+      <table><thead><tr><th>Mes</th><th class="num">Ingresos</th><th class="num">Costo de venta</th><th class="num">Gastos operativos</th><th class="num">Utilidad neta</th></tr></thead><tbody>
+        ${resumen.tendencia_mensual.map(m => `<tr><td>${m.mes}</td><td class="num">${fmt(m.ingresos)}</td><td class="num">${fmt(m.costo_venta)}</td><td class="num">${fmt(m.gastos_operativos)}</td><td class="num">${fmt(m.ingresos - m.costo_venta - m.gastos_operativos)}</td></tr>`).join('')}
+      </tbody></table>
+    </div>` : ''}
     <div class="card"><h2>Margen por producto (pedidos despachados)</h2>
       ${resumen.margen_por_producto.length ? `<table><thead><tr><th>Producto</th><th class="num">Unidades</th><th class="num">Ingresos</th><th class="num">Costos</th><th class="num">Utilidad</th></tr></thead><tbody>
         ${resumen.margen_por_producto.map(m => `<tr><td>${m.nombre}</td><td class="num">${m.unidades_vendidas}</td><td class="num">${fmt(m.ingresos)}</td><td class="num">${fmt(m.costos)}</td><td class="num">${fmt(m.utilidad)}</td></tr>`).join('')}

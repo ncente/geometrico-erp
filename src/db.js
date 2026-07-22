@@ -76,11 +76,13 @@ CREATE TABLE IF NOT EXISTS pedidos (
   cliente_id              INTEGER REFERENCES clientes(id),
   cliente_nombre          TEXT,
   cliente_telefono        TEXT,
+  cliente_direccion       TEXT,
   cotizacion_id           INTEGER REFERENCES cotizaciones(id),
   fecha_pedido            TEXT NOT NULL,
   fecha_entrega_estimada  TEXT,
   estado_produccion       TEXT NOT NULL DEFAULT 'por_fabricar', -- por_fabricar | en_produccion | listo_despacho | despachado
   total                   INTEGER NOT NULL DEFAULT 0,
+  costo_registrado        INTEGER NOT NULL DEFAULT 0,  -- 1 cuando ya se registró el costo de venta (COGS) en finanzas
   creado_en               INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
@@ -139,6 +141,17 @@ CREATE TABLE IF NOT EXISTS transacciones_financieras (
   creado_en     INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 `);
+
+// ── Migración: agrega columnas nuevas a bases ya desplegadas sin perder datos ──
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    console.log(`[db] Migración: columna ${table}.${column} agregada.`);
+  }
+}
+ensureColumn('pedidos', 'cliente_direccion', 'TEXT');
+ensureColumn('pedidos', 'costo_registrado', 'INTEGER NOT NULL DEFAULT 0');
 
 // ── Seed de productos (catálogo del cotizador) si la tabla está vacía ──
 const productCount = db.prepare('SELECT COUNT(*) AS n FROM productos').get().n;

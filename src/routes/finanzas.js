@@ -26,7 +26,13 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-// Resumen: ingresos/gastos confirmados vs proyectados, margen por producto, salud de caja
+// Resumen: separa ingreso bruto (lo que paga el cliente) de utilidad real.
+// - ingresos_confirmados: ventas ya despachadas y cobradas (cash-in real)
+// - costo_venta: COGS auto-registrado al despachar (categoria='costo_produccion')
+// - utilidad_bruta: ingresos - costo_venta (lo que de verdad ganaste, no lo que facturaste)
+// - gastos_operativos: todo lo demás (nómina, marketing, arriendo... categoria != 'costo_produccion')
+// - utilidad_neta: utilidad_bruta - gastos_operativos
+// - salud_caja: ingresos_confirmados - TODOS los gastos (COGS + operativos) = caja real disponible
 router.get('/resumen', (req, res) => {
   const ingresosConfirmados = db
     .prepare(`SELECT COALESCE(SUM(monto),0) AS s FROM transacciones_financieras WHERE tipo='ingreso' AND estado='confirmado'`)
@@ -34,7 +40,17 @@ router.get('/resumen', (req, res) => {
   const ingresosProyectados = db
     .prepare(`SELECT COALESCE(SUM(monto),0) AS s FROM transacciones_financieras WHERE tipo='ingreso' AND estado='proyectado'`)
     .get().s;
-  const gastos = db.prepare(`SELECT COALESCE(SUM(monto),0) AS s FROM transacciones_financieras WHERE tipo='gasto'`).get().s;
+  const costoVenta = db
+    .prepare(`SELECT COALESCE(SUM(monto),0) AS s FROM transacciones_financieras WHERE tipo='gasto' AND categoria='costo_produccion'`)
+    .get().s;
+  const gastosOperativos = db
+    .prepare(`SELECT COALESCE(SUM(monto),0) AS s FROM transacciones_financieras WHERE tipo='gasto' AND categoria!='costo_produccion'`)
+    .get().s;
+  const gastosTotales = costoVenta + gastosOperativos;
+
+  const utilidadBruta = ingresosConfirmados - costoVenta;
+  const utilidadNeta = utilidadBruta - gastosOperativos;
+  const margenBrutoPct = ingresosConfirmados > 0 ? (utilidadBruta / ingresosConfirmados) * 100 : 0;
 
   const porCategoria = db
     .prepare(
@@ -59,13 +75,32 @@ router.get('/resumen', (req, res) => {
     )
     .all();
 
+  // Tendencia mensual (últimos 6 meses) — ingresos confirmados vs gastos totales por mes
+  const tendenciaMensual = db
+    .prepare(
+      `SELECT strftime('%Y-%m', fecha) AS mes,
+              COALESCE(SUM(CASE WHEN tipo='ingreso' AND estado='confirmado' THEN monto ELSE 0 END),0) AS ingresos,
+              COALESCE(SUM(CASE WHEN tipo='gasto' AND categoria='costo_produccion' THEN monto ELSE 0 END),0) AS costo_venta,
+              COALESCE(SUM(CASE WHEN tipo='gasto' AND categoria!='costo_produccion' THEN monto ELSE 0 END),0) AS gastos_operativos
+       FROM transacciones_financieras
+       WHERE fecha >= date('now','-6 months')
+       GROUP BY mes ORDER BY mes`
+    )
+    .all();
+
   res.json({
-    salud_caja: ingresosConfirmados - gastos,
+    salud_caja: ingresosConfirmados - gastosTotales,
     ingresos_confirmados: ingresosConfirmados,
     ingresos_proyectados: ingresosProyectados,
-    gastos,
+    costo_venta: costoVenta,
+    gastos_operativos: gastosOperativos,
+    gastos: gastosTotales, // compatibilidad con versiones anteriores del panel
+    utilidad_bruta: utilidadBruta,
+    utilidad_neta: utilidadNeta,
+    margen_bruto_pct: margenBrutoPct,
     por_categoria: porCategoria,
     margen_por_producto: margenPorProducto,
+    tendencia_mensual: tendenciaMensual,
   });
 });
 

@@ -97,12 +97,66 @@ router.post('/', (req, res) => {
   res.status(201).json(conItems(db.prepare('SELECT * FROM cotizaciones WHERE id = ?').get(cotId)));
 });
 
+// Edición completa — editable en cualquier estado (incluida 'aceptada'), porque muchos clientes
+// solo dan teléfono/dirección exacta hasta el momento del despacho. Si se reenvían items, se
+// recalculan los totales igual que al crear. Si la cotización ya generó un pedido (cotizacion_id
+// en pedidos), NO se toca el pedido — hay que editarlo aparte en /api/pedidos/:id.
 router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM cotizaciones WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Cotización no encontrada' });
-  const { estado, nota } = req.body;
-  if (estado) db.prepare('UPDATE cotizaciones SET estado = ? WHERE id = ?').run(estado, req.params.id);
-  if (nota !== undefined) db.prepare('UPDATE cotizaciones SET nota = ? WHERE id = ?').run(nota, req.params.id);
+  const {
+    estado, nota, cliente_id, cliente_nombre, cliente_telefono, cliente_direccion,
+    items, iva_pct, envio, anticipo, condiciones, texto_garantia, fecha,
+  } = req.body;
+
+  const tx = db.transaction(() => {
+    let subtotal = existing.subtotal;
+    if (Array.isArray(items) && items.length > 0) {
+      subtotal = items.reduce((sum, it) => {
+        const desc = it.descuento_pct || 0;
+        return sum + it.precio_unitario * it.cantidad * (1 - desc / 100);
+      }, 0);
+      db.prepare('DELETE FROM cotizacion_items WHERE cotizacion_id = ?').run(req.params.id);
+      const insertItem = db.prepare(
+        `INSERT INTO cotizacion_items (cotizacion_id, producto_id, nombre, detalle, precio_unitario, descuento_pct, cantidad, imagen_url)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const it of items) {
+        insertItem.run(
+          req.params.id, it.producto_id || null, it.nombre, it.detalle || null,
+          it.precio_unitario, it.descuento_pct || 0, it.cantidad, it.imagen_url || null
+        );
+      }
+    }
+    const ivaPctNum = iva_pct !== undefined ? iva_pct : existing.iva_pct;
+    const envioNum = envio !== undefined ? envio : existing.envio;
+    const iva = Math.round(subtotal * (ivaPctNum / 100));
+    const total = Math.round(subtotal + iva + envioNum);
+    const anticipoNum = existing.modo === 'orden_venta' ? (anticipo !== undefined ? anticipo : existing.anticipo) : 0;
+    const saldo = Math.max(0, total - anticipoNum);
+
+    db.prepare(
+      `UPDATE cotizaciones SET
+         cliente_id = ?, cliente_nombre = ?, cliente_telefono = ?, cliente_direccion = ?,
+         subtotal = ?, iva_pct = ?, iva = ?, envio = ?, anticipo = ?, total = ?, saldo = ?,
+         estado = ?, condiciones = ?, nota = ?, texto_garantia = ?, fecha = ?
+       WHERE id = ?`
+    ).run(
+      cliente_id !== undefined ? cliente_id : existing.cliente_id,
+      cliente_nombre !== undefined ? cliente_nombre : existing.cliente_nombre,
+      cliente_telefono !== undefined ? cliente_telefono : existing.cliente_telefono,
+      cliente_direccion !== undefined ? cliente_direccion : existing.cliente_direccion,
+      Math.round(subtotal), ivaPctNum, iva, envioNum, anticipoNum, total, saldo,
+      estado !== undefined ? estado : existing.estado,
+      condiciones !== undefined ? JSON.stringify(condiciones) : existing.condiciones,
+      nota !== undefined ? nota : existing.nota,
+      texto_garantia !== undefined ? texto_garantia : existing.texto_garantia,
+      fecha !== undefined ? fecha : existing.fecha,
+      req.params.id
+    );
+  });
+  tx();
+
   res.json(conItems(db.prepare('SELECT * FROM cotizaciones WHERE id = ?').get(req.params.id)));
 });
 
